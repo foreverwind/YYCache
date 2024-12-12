@@ -22,7 +22,7 @@
 static const int extended_data_key;
 
 /// Free disk space in bytes.
-static int64_t _YYDiskSpaceFree() {
+static int64_t _YYDiskSpaceFree(void) {
     NSError *error = nil;
     NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfFileSystemForPath:NSHomeDirectory() error:&error];
     if (error) return -1;
@@ -33,24 +33,23 @@ static int64_t _YYDiskSpaceFree() {
 
 /// String's md5 hash.
 static NSString *_YYNSStringMD5(NSString *string) {
-    if (!string) return nil;
     NSData *data = [string dataUsingEncoding:NSUTF8StringEncoding];
-    unsigned char result[CC_MD5_DIGEST_LENGTH];
-    CC_MD5(data.bytes, (CC_LONG)data.length, result);
-    return [NSString stringWithFormat:
-                @"%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
-                result[0],  result[1],  result[2],  result[3],
-                result[4],  result[5],  result[6],  result[7],
-                result[8],  result[9],  result[10], result[11],
-                result[12], result[13], result[14], result[15]
-            ];
+    uint8_t digest[CC_SHA256_DIGEST_LENGTH];
+    
+    CC_SHA256(data.bytes, (unsigned int)data.length, digest);
+    
+    NSMutableString *output = [NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH * 2];
+    for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; i++) {
+        [output appendFormat:@"%02x", digest[i]];
+    }
+    return output;
 }
 
 /// weak reference for all instances
 static NSMapTable *_globalInstances;
 static dispatch_semaphore_t _globalInstancesLock;
 
-static void _YYDiskCacheInitGlobal() {
+static void _YYDiskCacheInitGlobal(void) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         _globalInstancesLock = dispatch_semaphore_create(1);
@@ -152,7 +151,7 @@ static void _YYDiskCacheSetGlobal(YYDiskCache *cache) {
 
 - (void)_appWillBeTerminated {
     Lock();
-    _kv = nil;
+//    _kv = nil;
     Unlock();
 }
 
@@ -238,12 +237,16 @@ static void _YYDiskCacheSetGlobal(YYDiskCache *cache) {
     if (_customUnarchiveBlock) {
         object = _customUnarchiveBlock(item.value);
     } else {
-        @try {
-            object = [NSKeyedUnarchiver unarchiveObjectWithData:item.value];
-        }
-        @catch (NSException *exception) {
-            // nothing to do...
-        }
+//        @try {
+//            object = [NSKeyedUnarchiver unarchiveObjectWithData:item.value];
+//        }
+//        @catch (NSException *exception) {
+//            // nothing to do...
+//        }
+        NSKeyedUnarchiver * unarchiver =  [[NSKeyedUnarchiver alloc] initForReadingFromData:item.value error:nil];
+        unarchiver.requiresSecureCoding = NO;
+        object = [unarchiver decodeObjectForKey:NSKeyedArchiveRootObjectKey];
+        [unarchiver finishDecoding];
     }
     if (object && item.extendedData) {
         [YYDiskCache setExtendedData:item.extendedData toObject:object];
@@ -273,12 +276,7 @@ static void _YYDiskCacheSetGlobal(YYDiskCache *cache) {
     if (_customArchiveBlock) {
         value = _customArchiveBlock(object);
     } else {
-        @try {
-            value = [NSKeyedArchiver archivedDataWithRootObject:object];
-        }
-        @catch (NSException *exception) {
-            // nothing to do...
-        }
+        value = [NSKeyedArchiver archivedDataWithRootObject:object requiringSecureCoding:false error:nil];
     }
     if (!value) return;
     NSString *filename = nil;
@@ -343,7 +341,7 @@ static void _YYDiskCacheSetGlobal(YYDiskCache *cache) {
             return;
         }
         Lock();
-        [_kv removeAllItemsWithProgressBlock:progress endBlock:end];
+        [self->_kv removeAllItemsWithProgressBlock:progress endBlock:end];
         Unlock();
     });
 }

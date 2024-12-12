@@ -16,7 +16,7 @@
 #import <pthread.h>
 
 
-static inline dispatch_queue_t YYMemoryCacheGetReleaseQueue() {
+static inline dispatch_queue_t YYMemoryCacheGetReleaseQueue(void) {
     return dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0);
 }
 
@@ -436,7 +436,7 @@ static inline dispatch_queue_t YYMemoryCacheGetReleaseQueue() {
     }
     if (_lru->_totalCost > _costLimit) {
         dispatch_async(_queue, ^{
-            [self trimToCost:_costLimit];
+            [self trimToCost:self->_costLimit];
         });
     }
     if (_lru->_totalCount > _countLimit) {

@@ -57,7 +57,7 @@ static NSString *const kTrashDirectoryName = @"trash";
  */
 
 /// Returns nil in App Extension.
-static UIApplication *_YYSharedApplication() {
+static UIApplication *_YYSharedApplication(void) {
     static BOOL isAppExtension = NO;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
@@ -119,13 +119,32 @@ static UIApplication *_YYSharedApplication() {
 
 - (BOOL)_dbClose {
     if (!_db) return YES;
-    
+
     int  result = 0;
     BOOL retry = NO;
     BOOL stmtFinalized = NO;
     
-    if (_dbStmtCache) CFRelease(_dbStmtCache);
-    _dbStmtCache = NULL;
+    /**
+     fix iOS18 close.
+     https://github.com/ibireme/YYCache/issues/166
+     */
+    if (@available(iOS 18, *)) {
+        if (_dbStmtCache) {
+            CFIndex size = CFDictionaryGetCount(_dbStmtCache);
+            CFTypeRef *valuesRef = (CFTypeRef *)malloc(size * sizeof(CFTypeRef));
+            CFDictionaryGetKeysAndValues(_dbStmtCache, NULL, (const void **)valuesRef);
+            sqlite3_stmt **stmts = (sqlite3_stmt **)valuesRef;
+            for (CFIndex i = 0; i < size; i++) {
+                sqlite3_stmt *stmt = stmts[i];
+                sqlite3_finalize(stmt);
+            }
+            free(valuesRef);
+            CFRelease(_dbStmtCache);
+        }
+    } else {
+        if (_dbStmtCache) CFRelease(_dbStmtCache);
+        _dbStmtCache = NULL;
+    }
     
     do {
         retry = NO;
